@@ -30,6 +30,12 @@ jobs:
         with:
           python-version-file: ".python-version"
 
+      - name: Set version from Git Tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Setting pyproject.toml version to: $VERSION"
+          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+
       - name: Clean old build artifacts
         run: rm -rf dist/
 

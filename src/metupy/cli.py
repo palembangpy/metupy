@@ -1,12 +1,66 @@
 import io
+import json
 import os
 import shutil
+import subprocess
 import sys
 import urllib.request
 import zipfile
 import click
 import markdown
 from metupy.engine import MetupyServer
+
+PACKAGE_NAME = "metupy"
+
+
+def check_and_auto_update():
+    """Check PyPI for newer versions and auto-update if available."""
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+        current_version = version(PACKAGE_NAME)
+    except Exception:
+        return
+
+    try:
+        url = f"https://pypi.org/pypi/{PACKAGE_NAME}/json"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Metupy-CLI'})
+
+        with urllib.request.urlopen(req, timeout=1.5) as response:
+            data = json.loads(response.read().decode())
+            latest_version = data["info"]["version"]
+
+        def parse_ver(v):
+            return tuple(map(int, (v.split("."))))
+
+        if parse_ver(latest_version) > parse_ver(current_version):
+            click.secho(
+                f"\n[Metupy] New version found! (v{current_version} ->"
+                f" v{latest_version})",
+                fg='cyan',
+            )
+            click.secho("Starting auto-update process...", fg='yellow')
+
+            cmd = [sys.executable, "-m", "pip", "install", "--upgrade", PACKAGE_NAME]
+            result = subprocess.run(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+
+            if result.returncode == 0:
+                click.secho(
+                    f"[Metupy] Successfully updated to v{latest_version}!",
+                    fg='green',
+                    bold=True,
+                )
+                click.secho("Please re-run your command.\n", fg='yellow')
+                sys.exit(0)
+            else:
+                click.secho(
+                    "Auto-update failed, continuing with current version...\n",
+                    fg='yellow',
+                )
+    except Exception:
+        pass
+
 
 COMPONENTS_INIT_TEMPLATE = '''import os
 import sys
@@ -84,7 +138,7 @@ def __getattr__(name: str):
 @click.group()
 def cli():
     """Metupy CLI - Modern Python SSG Framework."""
-    pass
+    check_and_auto_update()
 
 
 @cli.command()
