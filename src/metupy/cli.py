@@ -529,15 +529,13 @@ def build():
         with open(css_path, "r", encoding="utf-8") as f:
             default_css = f.read()
 
-    sidebar_html = "".join([
-        f'<a class="menu-link" href="{route}.html">{title}</a>\n'
-        for route, title in getattr(app, '_nav_links', [])
-    ])
-    HTML = (
-        '<!DOCTYPE html><html><head><title>{title}</title><style>'
-        f'{default_css}'
-        '</style></head><body><nav>{sidebar}</nav><main>{content}</main></body></html>'
-    )
+    sidebar_links = []
+    for route, title in getattr(app, '_nav_links', []):
+        link_path = route.strip('/') or 'index'
+        sidebar_links.append(f'<a class="menu-link" href="{link_path}.html">{title}</a>\n')
+    sidebar_html = "".join(sidebar_links)
+
+    HTML_TEMPLATE = '<!DOCTYPE html><html><head><title>{{title}}</title><style>{{css}}</style></head><body><nav>{{sidebar}}</nav><main>{{content}}</main></body></html>'
 
     for route, page_obj in app._routes.items():
         relative_path = route.strip('/') or 'index'
@@ -556,21 +554,27 @@ def build():
             encoding='utf-8',
         ) as f:
             f.write(md_content)
+
         html_body = markdown.markdown(
             md_content, extensions=['fenced_code', 'tables']
         )
+
+        page_title = getattr(page_obj, 'page_title', 'Untitled')
+
+        final_html = (
+            HTML_TEMPLATE
+            .replace('{{title}}', page_title)
+            .replace('{{css}}', default_css)
+            .replace('{{sidebar}}', sidebar_html)
+            .replace('{{content}}', html_body)
+        )
+
         with open(
             os.path.join(sites_dir, f"{relative_path}.html"),
             'w',
             encoding='utf-8',
         ) as f:
-            f.write(
-                HTML.format(
-                    title=getattr(page_obj, 'page_title', 'Untitled'),
-                    sidebar=sidebar_html,
-                    content=html_body,
-                )
-            )
+            f.write(final_html)
 
     click.secho("Static build completed!", fg='green', bold=True)
 
