@@ -145,38 +145,50 @@ class MetupyServer:
             page_obj = self._routes[route_path]
             
             # Navigation links
-            sidebar_html = ""
+            active_folder_init = ""
+            for folder, pages in self._tree.items():
+                if folder != "root" and any(route_path == p["route"] for p in pages):
+                    active_folder_init = folder
+                    break
+
+            sidebar_html = f'<div x-data="{{ activeGroup: \'{active_folder_init}\' }}">\n'
             for folder, pages in self._tree.items():
                 if folder == "root":
                     for p in pages:
                         active_class = 'active' if route_path == p["route"] else ""
                         sidebar_html += f'<a class="menu-link {active_class}" href="{p["route"]}" @click="sidebarOpen = false">{p["title"]}</a>\n'
                 else:
-                    is_active_group = any(route_path == p["route"] for p in pages)
-                    open_state = 'true' if is_active_group else 'false'
                     folder_title = folder.replace('-', ' ').replace('_', ' ').title()
+                    folder_id = folder.replace("'", "\\'")
                     
                     sidebar_html += f'''
-                    <div x-data="{{ open: {open_state} }}" style="margin-bottom: 4px;">
-                        <button @click="open = !open" class="menu-link dropdown-btn" :class="{{ 'active': open }}">
+                    <div style="margin-bottom: 4px;">
+                        <button @click="activeGroup = (activeGroup === '{folder_id}' ? null : '{folder_id}')" 
+                                class="menu-link dropdown-btn" 
+                                :class="{{ 'active': activeGroup === '{folder_id}' }}">
                             <span style="font-weight: 600;">{folder_title}</span>
-                            <svg class="chevron" :class="{{ 'rotate': open }}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            <svg class="chevron" :class="{{ 'rotate': activeGroup === '{folder_id}' }}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </button>
-                        <div x-show="open" x-collapse class="dropdown-menu">
+                        <div x-show="activeGroup === '{folder_id}'" x-collapse class="dropdown-menu">
                     '''
                     for p in pages:
                         active_class = 'active' if route_path == p["route"] else ""
                         sidebar_html += f'<a class="menu-link {active_class}" href="{p["route"]}" @click="sidebarOpen = false">{p["title"]}</a>\n'
                     sidebar_html += '</div></div>\n'
+            sidebar_html += '</div>'
 
             # Search index
             search_data = []
             for r, p_obj in self._routes.items():
-                raw_md = p_obj.render()
-                clean_text = re.sub(r'<[^>]+>', '', raw_md)
-                clean_text = re.sub(r'#+\s', '', clean_text)
-                clean_text = re.sub(r'[\*\_\`\>\[\]\(\)]', '', clean_text)
+                raw_content = p_obj.render() if hasattr(p_obj, 'render') else str(p_obj)
+                
+                clean_text = re.sub(r'```.*?```', ' ', raw_content, flags=re.DOTALL)
+                clean_text = re.sub(r'`[^`]+`', ' ', clean_text)
+                clean_text = re.sub(r'<[^>]+>', ' ', clean_text)
+                clean_text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', clean_text)
+                clean_text = re.sub(r'[#\*\_\>\|\-\=\[\]\(\)]', ' ', clean_text)
                 clean_text = " ".join(clean_text.split())
+                
                 search_data.append({
                     "url": r,
                     "title": getattr(p_obj, 'page_title', 'Untitled'),

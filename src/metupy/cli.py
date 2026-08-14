@@ -1,20 +1,22 @@
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import urllib.request
 import zipfile
 import click
+import jinja2
 import markdown
+
 from metupy.engine import MetupyServer
 
 PACKAGE_NAME = "metupy"
 
 
 def check_and_auto_update():
-    """Check PyPI for newer versions and auto-update if available."""
     try:
         from importlib.metadata import PackageNotFoundError, version
         current_version = version(PACKAGE_NAME)
@@ -34,11 +36,11 @@ def check_and_auto_update():
 
         if parse_ver(latest_version) > parse_ver(current_version):
             click.secho(
-                f"\n[Metupy] New version found! (v{current_version} ->"
+                f"\n🚀 [Metupy] New version found! (v{current_version} ->"
                 f" v{latest_version})",
                 fg='cyan',
             )
-            click.secho("Starting auto-update process...", fg='yellow')
+            click.secho("🔄 Starting auto-update process...", fg='yellow')
 
             cmd = [sys.executable, "-m", "pip", "install", "--upgrade", PACKAGE_NAME]
             result = subprocess.run(
@@ -47,15 +49,15 @@ def check_and_auto_update():
 
             if result.returncode == 0:
                 click.secho(
-                    f"[Metupy] Successfully updated to v{latest_version}!",
+                    f"✨ [Metupy] Successfully updated to v{latest_version}!",
                     fg='green',
                     bold=True,
                 )
-                click.secho("Please re-run your command.\n", fg='yellow')
+                click.secho("💡 Please re-run your command.\n", fg='yellow')
                 sys.exit(0)
             else:
                 click.secho(
-                    "Auto-update failed, continuing with current version...\n",
+                    "⚠️ Auto-update failed, continuing with current version...\n",
                     fg='yellow',
                 )
     except Exception:
@@ -95,8 +97,10 @@ def __getattr__(name: str):
     import metupy
     lib_dir = os.path.dirname(os.path.abspath(metupy.__file__))
 
+    # Workspace prioritas untuk tema luar (./theme/) dan tema default (templates/)
     possible_paths = [
         os.path.join(cwd, 'components', f"{file_name}.py"),
+        os.path.join(cwd, 'theme', active_theme, 'components', f"{file_name}.py"),
         os.path.join(cwd, 'templates', active_theme, 'components', f"{file_name}.py"),
         os.path.join(lib_dir, 'templates', active_theme, 'components', f"{file_name}.py"),
         os.path.join(lib_dir, 'components_blueprint', f"{file_name}.py"),
@@ -144,50 +148,114 @@ def cli():
 @cli.command()
 @click.argument('project_name')
 def init(project_name):
-    """Initialize a new Metupy project."""
-    base_dir = os.path.join(os.getcwd(), project_name)
+    """Initialize a new Metupy project including GitHub Actions workflow."""
+    if project_name == ".":
+        base_dir = os.getcwd()
+        actual_project_name = os.path.basename(base_dir)
+    else:
+        base_dir = os.path.join(os.getcwd(), project_name)
+        actual_project_name = project_name
+        if os.path.exists(base_dir):
+            click.secho(f"Folder '{project_name}' already exists!", fg='red')
+            return
 
-    if os.path.exists(base_dir):
-        click.secho(f"Folder '{project_name}' already exists!", fg='red')
+    toml_path = os.path.join(base_dir, 'pyproject.toml')
+    if os.path.exists(toml_path):
+        click.secho("Metupy project is already initialized in this directory!", fg='red')
         return
 
     pages_dir = os.path.join(base_dir, 'pages')
     assets_dir = os.path.join(base_dir, 'assets')
     components_dir = os.path.join(base_dir, 'components')
+    workflows_dir = os.path.join(base_dir, '.github', 'workflows')
 
-    os.makedirs(pages_dir)
-    os.makedirs(assets_dir)
-    os.makedirs(components_dir)
+    os.makedirs(pages_dir, exist_ok=True)
+    os.makedirs(assets_dir, exist_ok=True)
+    os.makedirs(components_dir, exist_ok=True)
+    os.makedirs(workflows_dir, exist_ok=True)
 
     library_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # 1. Copy default logo if available
     lib_logo_path = os.path.join(library_dir, "assets", "metupy.png")
     if os.path.exists(lib_logo_path):
         shutil.copy(lib_logo_path, os.path.join(assets_dir, "metupy.png"))
 
-    # 2. Generate components/__init__.py with dynamic loader
     with open(
         os.path.join(components_dir, "__init__.py"), "w", encoding="utf-8"
     ) as f:
         f.write(COMPONENTS_INIT_TEMPLATE)
 
-    # 3. Create initial index page
+    workflow_path = os.path.join(workflows_dir, 'deploy.yml')
+    workflow_content = """name: Deploy Metupy SSG
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Metupy
+        run: |
+          python -m pip install --upgrade pip
+          pip install metupy
+
+      - name: Build Static Site
+        run: |
+          metupy build
+
+      - name: Upload Artifact (/dist)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+"""
+    with open(workflow_path, 'w', encoding='utf-8') as f:
+        f.write(workflow_content)
+
     index_path = os.path.join(pages_dir, 'index.py')
-    index_content = '''# Generated by Metupy Engine
+    index_content = '''# Generated by Metupy CLI
 from metupy.page import Page
 from components import Button, Tabs, Kbd, Modal, Icon
 
 page = Page(title="Home")
 
-# 1. Initialize Icons
 icon_badge = Icon("fa-solid fa-rocket", size="sm")
 icon_bolt_title = Icon("fa-solid fa-bolt", size="md")
 icon_fast = Icon("fa-solid fa-bolt-lightning", size="xl", color="var(--accent)")
 icon_palette = Icon("fa-solid fa-palette", size="xl", color="var(--accent)")
 icon_responsive = Icon("fa-solid fa-mobile-screen-button", size="xl", color="var(--accent)")
 
-# 2. CTA Button Components
 btn_primary = Button(
     text="Get Started", 
     icon="fa-solid fa-rocket", 
@@ -201,7 +269,6 @@ btn_github = Button(
     height="44px"
 )
 
-# 3. Code Tabs Demo
 code_python = """from metupy.page import Page
 
 page = Page(title="Home")
@@ -214,7 +281,6 @@ tabs_demo = Tabs([
     ("Terminal", code_terminal)
 ])
 
-# 4. Kbd & Modal Components
 kbd_shortcut = Kbd(["Ctrl", "K"])
 
 modal_demo = Modal(
@@ -224,9 +290,7 @@ modal_demo = Modal(
     trigger_text="Open Interactive Modal"
 )
 
-# 5. Inject HTML Content into Page Object
 page.raw(f"""
-<!-- HERO SECTION -->
 <div style="text-align: center; padding: 2.5rem 1rem 1.5rem 1rem; max-width: 800px; margin: 0 auto;">
     <span style="display: inline-flex; align-items: center; padding: 4px 14px; background: var(--accent-glow); color: var(--accent); border-radius: 20px; font-size: 0.85rem; font-weight: 600; margin-bottom: 1.25rem;">
         {icon_badge} Metupy Framework v1.0
@@ -243,7 +307,6 @@ page.raw(f"""
     </div>
 </div>
 
-<!-- QUICKSTART & TABS SECTION -->
 <div id="quickstart" style="max-width: 800px; margin: 2.5rem auto 1rem auto;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 8px;">
         <h2 style="border: none; margin: 0; font-size: 1.3rem; font-weight: 700; display: flex; align-items: center;">
@@ -256,7 +319,6 @@ page.raw(f"""
     {tabs_demo}
 </div>
 
-<!-- FEATURE CARDS GRID -->
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1.25rem; max-width: 800px; margin: 2.5rem auto;">
     <div style="padding: 1.25rem; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 12px;">
         <div style="margin-bottom: 0.5rem;">{icon_fast}</div>
@@ -275,10 +337,9 @@ page.raw(f"""
     </div>
 </div>
 
-<!-- INTERACTIVE DEMO BOX -->
 <div style="text-align: center; max-width: 800px; margin: 2.5rem auto 1rem auto; padding: 2rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 14px;">
     <h3 style="margin-top: 0; margin-bottom: 0.5rem; font-size: 1.2rem;">Interactive Feature Demo</h3>
-    <p style="color: var(--text-muted); font-size: 0.925rem; margin-bottom: 1.25rem;">Click the button below to trigger an interactive dialog modal powered by Alpine.js.</p>
+    <p style="color: var(--text-muted); font-size: 0.925rem; margin-bottom: 1.25rem;">Click the button below to trigger an interactive dialog modal.</p>
     {modal_demo}
 </div>
 """)
@@ -286,10 +347,9 @@ page.raw(f"""
     with open(index_path, 'w', encoding='utf-8') as f:
         f.write(index_content)
 
-    # 4. Create pyproject.toml configuration file
-    toml_path = os.path.join(base_dir, 'pyproject.toml')
-    toml_content = f"""[project]
-name = "{project_name}"
+    toml_content = f"""# Generated by Metupy CLI
+[project]
+name = "{actual_project_name}"
 version = "0.1.0"
 description = "Documentation created with Metupy"
 requires-python = ">=3.10"
@@ -297,22 +357,33 @@ dependencies = ["metupy"]
 
 [tool.metupy]
 theme = "default"
+category = "docs"
+author = "Nama Kreator <email@domain.com>"
+organization = "Company / Organization"
+theme_status = "available"
+theme_repo_url = "https://github.com/username/repo"
+theme_registry_date = "2026-08-13|11:51:27"
 use_darkmode = true
 use_search = true
 logo = "/assets/metupy.png"
 
 [tool.metupy.icons]
 cdn_url = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"
-prefix = "fa-solid "
 """
     with open(toml_path, 'w', encoding='utf-8') as f:
         f.write(toml_content)
 
-    click.secho(
-        f"Project '{project_name}' successfully created! Run 'cd {project_name}'"
-        " then 'metupy dev'",
-        fg='green',
-    )
+    if project_name == ".":
+        click.secho(
+            "Project successfully initialized in the current directory! Run 'metupy dev'",
+            fg='green',
+        )
+    else:
+        click.secho(
+            f"Project '{project_name}' successfully created with GitHub Actions workflow! Run 'cd {project_name}'"
+            " then 'metupy dev'",
+            fg='green',
+        )
 
 
 @cli.command()
@@ -359,7 +430,7 @@ def add(component_names):
 @cli.command(name="make:page")
 @click.argument('path')
 def make_page(path):
-    """Create a single new page."""
+    """Create a single new page compatible with any active theme."""
     path = path.replace('.py', '')
     target_dir = os.path.join(os.getcwd(), 'pages')
     os.makedirs(target_dir, exist_ok=True)
@@ -371,7 +442,7 @@ def make_page(path):
 
     page_name = os.path.basename(path).replace('_', ' ').capitalize()
     template = (
-        f'# Generated by Metupy Engine\nfrom metupy.page import Page\n\npage ='
+        f'# Generated by Metupy CLI\nfrom metupy.page import Page\n\npage ='
         f' Page(title="{page_name}")\npage.title("{page_name}'
         f' Page")\npage.text("Welcome to {page_name} page")\n'
     )
@@ -384,7 +455,7 @@ def make_page(path):
 @cli.command(name="make:pagegroup")
 @click.argument('args', nargs=-1)
 def make_pagegroup(args):
-    """Create a group of pages (e.g. metupy make:pagegroup docs/setup docs/config)."""
+    """Create a group of pages compatible with any active theme."""
     for arg in args:
         parts = arg.split('/')
         folder = os.path.join(os.getcwd(), 'pages', parts[0])
@@ -400,7 +471,7 @@ def make_pagegroup(args):
                 else parts[0].capitalize()
             )
             template = (
-                'from metupy.page import Page\n\npage ='
+                '# Generated by Metupy CLI\nfrom metupy.page import Page\n\npage ='
                 f' Page(title="{page_name}")\npage.title("{page_name}'
                 ' Page")\n'
             )
@@ -412,12 +483,12 @@ def make_pagegroup(args):
 @cli.command(name="make:theme")
 @click.argument('theme_name')
 def make_theme(theme_name):
-    """Create a new custom theme directory in ./templates/."""
-    target_dir = os.path.join(os.getcwd(), 'templates', theme_name)
+    """Create a new custom theme directory in ./theme/<theme_name>/ with its own config file."""
+    target_dir = os.path.join(os.getcwd(), 'theme', theme_name)
 
     if os.path.exists(target_dir):
         click.secho(
-            f"Theme '{theme_name}' already exists in this project!", fg='red'
+            f"Theme '{theme_name}' already exists in ./theme/!", fg='red'
         )
         return
 
@@ -428,24 +499,51 @@ def make_theme(theme_name):
         click.secho("Default Metupy theme directory not found!", fg='red')
         return
 
-    shutil.copytree(default_theme_dir, target_dir)
+    click.secho(f"\nConfiguring metadata for theme: '{theme_name}'", fg='cyan', bold=True)
+    version = click.prompt("Enter theme version", type=str, default="1.0.0").strip()
+    category = click.prompt("Enter theme category (e.g., docs, landing, blog)", type=str, default="docs").strip()
+    author = click.prompt("Enter author name", type=str, default="johndoe").strip()
+    organization = click.prompt("Enter organization / company name", type=str, default="PalembangPy Community").strip()
+    theme_repo_url = click.prompt("Enter theme repository URL", type=str, default=f"https://github.com/{author}/{theme_name}").strip()
+    
+    import datetime
+    theme_registry_date = datetime.datetime.now().strftime("%Y-%m-%d|%H:%M:%S")
+
+    os.makedirs(target_dir, exist_ok=True)
+    boilerplate_files = ["layout.html", "style.css", "script.js"]
+    for file_name in boilerplate_files:
+        src_file = os.path.join(default_theme_dir, file_name)
+        if os.path.exists(src_file):
+            shutil.copy(src_file, os.path.join(target_dir, file_name))
+
+    default_components_dir = os.path.join(default_theme_dir, "components")
+    if os.path.exists(default_components_dir):
+        shutil.copytree(default_components_dir, os.path.join(target_dir, "components"), dirs_exist_ok=True)
+
+    theme_toml_content = f"""[tool.metupy.theme]
+name = "{theme_name}"
+version = "{version}"
+category = "{category}"
+author = "{author}"
+organization = "{organization}"
+theme_status = "not-available"
+theme_repo_url = "{theme_repo_url}"
+theme_registry_date = "{theme_registry_date}"
+"""
+    theme_toml_path = os.path.join(target_dir, "pyproject.toml")
+    with open(theme_toml_path, 'w', encoding='utf-8') as f:
+        f.write(theme_toml_content)
 
     click.secho(
-        f"Theme '{theme_name}' successfully created at"
-        f" ./templates/{theme_name}/",
+        f"\nTheme '{theme_name}' successfully created at ./theme/{theme_name}/ with its own configuration!",
         fg='green',
-    )
-    click.secho(
-        f'Activate this theme by setting theme = "{theme_name}" in'
-        ' pyproject.toml',
-        fg='yellow',
     )
 
 
 @cli.command(name="install:theme")
 @click.argument('repo_path')
 def install_theme(repo_path):
-    """Download and install a theme from GitHub."""
+    """Download and install a theme from GitHub into ./theme/."""
     repo_clean = repo_path.replace("https://github.com/", "").strip("/")
     parts = repo_clean.split("/")
 
@@ -457,7 +555,7 @@ def install_theme(repo_path):
 
     user, repo = parts[0], parts[1]
     theme_name = repo.replace("metupy-theme-", "").replace("metupy-", "")
-    target_dir = os.path.join(os.getcwd(), 'templates', theme_name)
+    target_dir = os.path.join(os.getcwd(), 'theme', theme_name)
 
     click.secho(
         f"Downloading theme '{theme_name}' from GitHub ({user}/{repo})...",
@@ -515,14 +613,27 @@ def install_theme(repo_path):
                         ):
                             shutil.copyfileobj(source, target)
 
+        toml_path = os.path.join(os.getcwd(), 'pyproject.toml')
+        if os.path.exists(toml_path):
+            with open(toml_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            updated_content = re.sub(
+                r'theme\s*=\s*"[^"]*"', 
+                f'theme = "{theme_name}"', 
+                content
+            )
+            
+            with open(toml_path, 'w', encoding='utf-8') as f:
+                f.write(updated_content)
+
         click.secho(
-            f"Theme '{theme_name}' successfully installed to"
-            f" ./templates/{theme_name}/",
+            f"Theme '{theme_name}' successfully installed to ./theme/{theme_name}/",
             fg='green',
         )
         click.secho(
-            f'Set theme = "{theme_name}" in pyproject.toml to use it!',
-            fg='yellow',
+            f"Automatically updated pyproject.toml -> theme = \"{theme_name}\"",
+            fg='cyan',
         )
 
     except Exception as e:
@@ -543,94 +654,314 @@ def dev(port):
 
 @cli.command()
 def build():
-    """Build static site documentation (HTML & MD)."""
+    """Build static site documentation into pure HTML pages using active theme workspace."""
+    custom_domain_choice = click.prompt("Do you want to customize the domain? (yes/no)", type=str, default="no").strip().lower()
+    custom_domain_value = ""
+    if custom_domain_choice == "yes":
+        custom_domain_value = click.prompt("Enter domain or subdomain (without http/https)", type=str).strip()
+
+    pwa_choice = click.prompt("Do you want to enable PWA (Progressive Web App) support? (yes/no)", type=str, default="no").strip().lower()
+    enable_pwa = (pwa_choice == "yes")
+
     if os.getcwd() not in sys.path:
         sys.path.insert(0, os.getcwd())
 
     app = MetupyServer(os.getcwd())
     dist_dir = 'dist'
-    sites_dir = os.path.join(dist_dir, 'sites')
-    contents_dir = os.path.join(dist_dir, 'contents')
     dist_assets = os.path.join(dist_dir, 'assets')
 
     if os.path.exists(dist_dir):
         shutil.rmtree(dist_dir)
-    os.makedirs(sites_dir, exist_ok=True)
-    os.makedirs(contents_dir, exist_ok=True)
+    os.makedirs(dist_dir, exist_ok=True)
 
     user_assets = os.path.join(os.getcwd(), 'assets')
     if os.path.exists(user_assets):
         shutil.copytree(user_assets, dist_assets)
 
     theme_name = app.config.get("theme", "default")
-    user_theme_dir = os.path.join(os.getcwd(), "templates", theme_name)
+    
+    user_theme_dir = os.path.join(os.getcwd(), "theme", theme_name)
+    legacy_user_theme_dir = os.path.join(os.getcwd(), "templates", theme_name)
     lib_theme_dir = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "templates", theme_name
+    )
+    fallback_lib_default = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "templates", "default"
     )
 
     if os.path.exists(user_theme_dir):
         active_theme_dir = user_theme_dir
+    elif os.path.exists(legacy_user_theme_dir):
+        active_theme_dir = legacy_user_theme_dir
     elif os.path.exists(lib_theme_dir):
         active_theme_dir = lib_theme_dir
     else:
-        active_theme_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "templates", "default"
-        )
+        active_theme_dir = fallback_lib_default
 
+    layout_path = os.path.join(active_theme_dir, "layout.html")
     css_path = os.path.join(active_theme_dir, "style.css")
+    js_path = os.path.join(active_theme_dir, "script.js")
+
+    if not os.path.exists(layout_path):
+        click.secho(f"Error: Template layout.html not found in active workspace '{active_theme_dir}'", fg='red')
+        return
+
+    with open(layout_path, 'r', encoding='utf-8') as f:
+        layout_src = f.read()
+
     default_css = ""
     if os.path.exists(css_path):
         with open(css_path, "r", encoding="utf-8") as f:
             default_css = f.read()
 
-    sidebar_links = []
-    for route, title in getattr(app, '_nav_links', []):
-        link_path = route.strip('/') or 'index'
-        sidebar_links.append(f'<a class="menu-link" href="{link_path}.html">{title}</a>\n')
-    sidebar_html = "".join(sidebar_links)
+    default_js = ""
+    if os.path.exists(js_path):
+        with open(js_path, "r", encoding="utf-8") as f:
+            default_js = f.read()
 
-    HTML_TEMPLATE = '<!DOCTYPE html><html><head><title>{{title}}</title><style>{{css}}</style></head><body><nav>{{sidebar}}</nav><main>{{content}}</main></body></html>'
+    env = jinja2.Environment()
+    template = env.from_string(layout_src)
+
+    search_index = []
+    for route, page_obj in app._routes.items():
+        clean_r = route.strip('/')
+        url_file = f"/{clean_r}" if clean_r else "/"
+        title = getattr(page_obj, 'page_title', clean_r.replace('_', ' ').replace('-', ' ').title() or 'Home')
+
+        raw_content = page_obj.render() if hasattr(page_obj, 'render') else str(page_obj)
+        
+        clean_text = re.sub(r'```.*?```', ' ', raw_content, flags=re.DOTALL)
+        clean_text = re.sub(r'`[^`]+`', ' ', clean_text)
+        clean_text = re.sub(r'<[^>]+>', ' ', clean_text)
+        clean_text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', clean_text)
+        clean_text = re.sub(r'[#\*\_\>\|\-\=\[\]\(\)]', ' ', clean_text)
+        clean_text = " ".join(clean_text.split())
+
+        search_index.append({
+            'title': title,
+            'url': url_file,
+            'content': clean_text
+        })
+
+    search_index_json = json.dumps(search_index)
+
+    def generate_ssg_sidebar(current_route):
+        active_folder_init = "null"
+        for folder, pages in app._tree.items():
+            if folder != "root" and any(current_route == p["route"] for p in pages):
+                active_folder_init = f"'{folder.replace(chr(39), chr(92)+chr(39))}'"
+                break
+
+        sidebar_html = f'<div x-data="{{ activeGroup: {active_folder_init} }}">\n'
+        
+        for folder, pages in app._tree.items():
+            if folder == "root":
+                for p in pages:
+                    clean_r = p["route"].strip('/')
+                    href = f"/{clean_r}" if clean_r else "/"
+                    active_class = 'active' if current_route == p["route"] else ""
+                    sidebar_html += f'<a class="menu-link {active_class}" href="{href}" @click="sidebarOpen = false">{p["title"]}</a>\n'
+            else:
+                folder_id = folder.replace("'", "\\'")
+                folder_title = folder.replace('-', ' ').replace('_', ' ').title()
+
+                sidebar_html += f'''
+                <div style="margin-bottom: 4px;">
+                    <button @click="activeGroup = (activeGroup === '{folder_id}' ? null : '{folder_id}')" 
+                            class="menu-link dropdown-btn" 
+                            :class="{{ 'active': activeGroup === '{folder_id}' }}">
+                        <span style="font-weight: 600;">{folder_title}</span>
+                        <svg class="chevron" :class="{{ 'rotate': activeGroup === '{folder_id}' }}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                    <div x-show="activeGroup === '{folder_id}'" x-collapse class="dropdown-menu">
+                '''
+                for p in pages:
+                    clean_r = p["route"].strip('/')
+                    href = f"/{clean_r}" if clean_r else "/"
+                    active_class = 'active' if current_route == p["route"] else ""
+                    sidebar_html += f'<a class="menu-link {active_class}" href="{href}" @click="sidebarOpen = false">{p["title"]}</a>\n'
+                sidebar_html += '</div></div>\n'
+        
+        sidebar_html += '</div>'
+        return sidebar_html
+
+    # ==== PWA Configuration & Injection ====
+    pwa_head_tags = ""
+    pwa_body_tags = ""
+    
+    if enable_pwa:
+        user_logo = app.config.get("logo", "/assets/metupy.png")
+        app_name = app.config.get("name", "Metupy Documentation")
+
+        pwa_head_tags = f"""
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#ffffff">
+    <link rel="apple-touch-icon" href="{user_logo}">
+"""
+        pwa_body_tags = """
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('Metupy Service Worker registered!'))
+            .catch(err => console.log('Service Worker registration failed: ', err));
+        });
+      }
+
+      let deferredPrompt;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        
+        let installBtn = document.getElementById('pwa-install-btn');
+        if (!installBtn) {
+          installBtn = document.createElement('button');
+          installBtn.id = 'pwa-install-btn';
+          installBtn.innerHTML = '<i class="fa-solid fa-download"></i> Install';
+          installBtn.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 9999; background: var(--accent, #3b82f6); color: white; border: none; padding: 10px 18px; border-radius: 30px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 8px; font-size: 0.9rem; transition: transform 0.2s;';
+          
+          installBtn.onmouseover = () => installBtn.style.transform = 'scale(1.05)';
+          installBtn.onmouseout = () => installBtn.style.transform = 'scale(1)';
+          
+          installBtn.addEventListener('click', async () => {
+            if (deferredPrompt) {
+              deferredPrompt.prompt();
+              const {{ outcome }} = await deferredPrompt.userChoice;
+              if (outcome === 'accepted') {
+                console.log('User accepted the install prompt');
+              }
+              deferredPrompt = null;
+              installBtn.remove();
+            }
+          });
+          document.body.appendChild(installBtn);
+        }
+      });
+    </script>
+"""
+        # Generate manifest.json
+        manifest_data = {
+            "name": app_name,
+            "short_name": app_name,
+            "start_url": "/",
+            "display": "standalone",
+            "background_color": "#f1f2f3",
+            "theme_color": "#f1f2f3",
+            "icons": [
+                {
+                    "src": user_logo,
+                    "sizes": "192x192",
+                    "type": "image/png"
+                },
+                {
+                    "src": user_logo,
+                    "sizes": "512x512",
+                    "type": "image/png"
+                }
+            ]
+        }
+        with open(os.path.join(dist_dir, 'manifest.json'), 'w', encoding='utf-8') as f:
+            json.dump(manifest_data, f, indent=4)
+        
+        # Generate sw.js (Service Worker caching)
+        sw_content = f"""
+const CACHE_NAME = 'metupy-pwa-cache-v1';
+const urlsToCache = ['/', '/index.html', '/404.html', '/manifest.json', '{user_logo}'];
+
+self.addEventListener('install', event => {{
+    event.waitUntil(
+        caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
+    );
+}});
+
+self.addEventListener('fetch', event => {{
+    event.respondWith(
+        fetch(event.request).catch(() => caches.match(event.request))
+    );
+}});
+"""
+        with open(os.path.join(dist_dir, 'sw.js'), 'w', encoding='utf-8') as f:
+            f.write(sw_content.strip())
+        
+        click.secho("PWA successfully configured with user config logo & custom install banner!", fg='cyan')
 
     for route, page_obj in app._routes.items():
-        relative_path = route.strip('/') or 'index'
-        os.makedirs(
-            os.path.dirname(os.path.join(sites_dir, relative_path)),
-            exist_ok=True,
+        rel_path = route.strip('/')
+        
+        if not rel_path or rel_path == 'index':
+            out_file = os.path.join(dist_dir, 'index.html')
+        else:
+            out_file = os.path.join(dist_dir, rel_path, 'index.html')
+
+        os.makedirs(os.path.dirname(out_file), exist_ok=True)
+
+        raw_content = page_obj.render() if hasattr(page_obj, 'render') else str(page_obj)
+
+        if markdown:
+            rendered_content = markdown.markdown(
+                raw_content, 
+                extensions=['fenced_code', 'tables', 'toc', 'attr_list']
+            )
+        else:
+            rendered_content = raw_content
+
+        title = getattr(page_obj, 'page_title', rel_path.replace('_', ' ').replace('-', ' ').title() or 'Home')
+        sidebar_html = generate_ssg_sidebar(route)
+
+        html_output = template.render(
+            title=title,
+            config=app.config,
+            default_css=default_css,
+            default_js=default_js,
+            sidebar_links=sidebar_html,
+            content=rendered_content,
+            search_index_json=search_index_json,
+            is_dev=False,
+            server_start_time=""
         )
-        os.makedirs(
-            os.path.dirname(os.path.join(contents_dir, relative_path)),
-            exist_ok=True,
-        )
-        md_content = page_obj.render()
-        with open(
-            os.path.join(contents_dir, f"{relative_path}.md"),
-            'w',
-            encoding='utf-8',
-        ) as f:
-            f.write(md_content)
 
-        html_body = markdown.markdown(
-            md_content, extensions=['fenced_code', 'tables']
-        )
+        if enable_pwa:
+            html_output = html_output.replace('</head>', f"{pwa_head_tags}\n</head>")
+            html_output = html_output.replace('</body>', f"{pwa_body_tags}\n</body>")
 
-        page_title = getattr(page_obj, 'page_title', 'Untitled')
+        with open(out_file, 'w', encoding='utf-8') as f:
+            f.write(html_output)
 
-        final_html = (
-            HTML_TEMPLATE
-            .replace('{{title}}', page_title)
-            .replace('{{css}}', default_css)
-            .replace('{{sidebar}}', sidebar_html)
-            .replace('{{content}}', html_body)
-        )
+    error_404_content = """
+    <div style="text-align: center; padding: 10vh 1rem;">
+        <h1 style="font-size: 5rem; margin-bottom: 0.5rem; color: var(--text-main);">404</h1>
+        <h2 style="font-size: 1.5rem; font-weight: 500; margin-bottom: 2rem;">Page Not Found</h2>
+        <p style="margin-bottom: 2rem; color: var(--text-muted);">Halaman yang kamu tuju tidak ditemukan atau URL-nya salah.</p>
+        <a href="/" style="padding: 0.75rem 1.5rem; background: var(--accent); color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Kembali ke Beranda</a>
+    </div>
+    """
+    
+    html_404_output = template.render(
+        title="404 Not Found",
+        config=app.config,
+        default_css=default_css,
+        default_js=default_js,
+        sidebar_links=generate_ssg_sidebar("/404"),
+        content=error_404_content,
+        search_index_json=search_index_json,
+        is_dev=False,
+        server_start_time=""
+    )
+    
+    if enable_pwa:
+        html_404_output = html_404_output.replace('</head>', f"{pwa_head_tags}\n</head>")
+        html_404_output = html_404_output.replace('</body>', f"{pwa_body_tags}\n</body>")
+    
+    with open(os.path.join(dist_dir, '404.html'), 'w', encoding='utf-8') as f:
+        f.write(html_404_output)
 
-        with open(
-            os.path.join(sites_dir, f"{relative_path}.html"),
-            'w',
-            encoding='utf-8',
-        ) as f:
-            f.write(final_html)
+    if custom_domain_choice == "yes" and custom_domain_value:
+        cname_path = os.path.join(dist_dir, 'CNAME')
+        with open(cname_path, 'w', encoding='utf-8') as f:
+            f.write(custom_domain_value)
+        click.secho(f"Custom domain CNAME file created: {custom_domain_value}", fg='cyan')
 
-    click.secho("Static build completed!", fg='green', bold=True)
+    click.secho("Static HTML build successful! Output saved in ./dist/", fg='green', bold=True)
 
 
 if __name__ == "__main__":
