@@ -97,7 +97,6 @@ def __getattr__(name: str):
     import metupy
     lib_dir = os.path.dirname(os.path.abspath(metupy.__file__))
 
-    # Workspace prioritas untuk tema luar (./theme/) dan tema default (templates/)
     possible_paths = [
         os.path.join(cwd, 'components', f"{file_name}.py"),
         os.path.join(cwd, 'theme', active_theme, 'components', f"{file_name}.py"),
@@ -365,7 +364,8 @@ theme_repo_url = "https://github.com/username/repo"
 theme_registry_date = "2026-08-13|11:51:27"
 use_darkmode = true
 use_search = true
-logo = "/assets/metupy.png"
+logo = "assets/metupy.png"
+base_url = ""
 
 [tool.metupy.icons]
 cdn_url = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"
@@ -682,9 +682,10 @@ def build(domain, pwa):
 
     user_assets = os.path.join(os.getcwd(), 'assets')
     if os.path.exists(user_assets):
-        shutil.copytree(user_assets, dist_assets)
+        shutil.copytree(user_assets, dist_assets, dirs_exist_ok=True)
 
     theme_name = app.config.get("theme", "default")
+    base_url = app.config.get("base_url", "")
     
     user_theme_dir = os.path.join(os.getcwd(), "theme", theme_name)
     legacy_user_theme_dir = os.path.join(os.getcwd(), "templates", theme_name)
@@ -731,7 +732,7 @@ def build(domain, pwa):
     search_index = []
     for route, page_obj in app._routes.items():
         clean_r = route.strip('/')
-        url_file = f"/{clean_r}" if clean_r else "/"
+        url_file = f"{base_url}/{clean_r}" if clean_r else f"{base_url}/"
         title = getattr(page_obj, 'page_title', clean_r.replace('_', ' ').replace('-', ' ').title() or 'Home')
 
         raw_content = page_obj.render() if hasattr(page_obj, 'render') else str(page_obj)
@@ -764,7 +765,7 @@ def build(domain, pwa):
             if folder == "root":
                 for p in pages:
                     clean_r = p["route"].strip('/')
-                    href = f"/{clean_r}" if clean_r else "/"
+                    href = f"{base_url}/{clean_r}" if clean_r else f"{base_url}/"
                     active_class = 'active' if current_route == p["route"] else ""
                     sidebar_html += f'<a class="menu-link {active_class}" href="{href}" @click="sidebarOpen = false">{p["title"]}</a>\n'
             else:
@@ -783,7 +784,7 @@ def build(domain, pwa):
                 '''
                 for p in pages:
                     clean_r = p["route"].strip('/')
-                    href = f"/{clean_r}" if clean_r else "/"
+                    href = f"{base_url}/{clean_r}" if clean_r else f"{base_url}/"
                     active_class = 'active' if current_route == p["route"] else ""
                     sidebar_html += f'<a class="menu-link {active_class}" href="{href}" @click="sidebarOpen = false">{p["title"]}</a>\n'
                 sidebar_html += '</div></div>\n'
@@ -796,19 +797,19 @@ def build(domain, pwa):
     pwa_body_tags = ""
     
     if enable_pwa:
-        user_logo = app.config.get("logo", "/assets/metupy.png")
+        user_logo = app.config.get("logo", "assets/metupy.png")
         app_name = app.config.get("name", "Metupy Documentation")
 
         pwa_head_tags = f"""
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="{base_url}/manifest.json">
     <meta name="theme-color" content="#ffffff">
-    <link rel="apple-touch-icon" href="{user_logo}">
+    <link rel="apple-touch-icon" href="{base_url}/{user_logo}">
 """
         pwa_body_tags = """
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
+          navigator.serviceWorker.register('""" + base_url + """/sw.js')
             .then(reg => console.log('Metupy Service Worker registered!'))
             .catch(err => console.log('Service Worker registration failed: ', err));
         });
@@ -848,18 +849,18 @@ def build(domain, pwa):
         manifest_data = {
             "name": app_name,
             "short_name": app_name,
-            "start_url": "/",
+            "start_url": f"{base_url}/",
             "display": "standalone",
             "background_color": "#f1f2f3",
             "theme_color": "#f1f2f3",
             "icons": [
                 {
-                    "src": user_logo,
+                    "src": f"{base_url}/{user_logo}",
                     "sizes": "192x192",
                     "type": "image/png"
                 },
                 {
-                    "src": user_logo,
+                    "src": f"{base_url}/{user_logo}",
                     "sizes": "512x512",
                     "type": "image/png"
                 }
@@ -870,7 +871,7 @@ def build(domain, pwa):
         
         sw_content = f"""
 const CACHE_NAME = 'metupy-pwa-cache-v1';
-const urlsToCache = ['/', '/index.html', '/manifest.json', '{user_logo}'];
+const urlsToCache = ['{base_url}/', '{base_url}/index.html', '{base_url}/manifest.json', '{base_url}/{user_logo}'];
 
 self.addEventListener('install', event => {{
     event.waitUntil(
@@ -894,8 +895,6 @@ self.addEventListener('fetch', event => {{
 """
         with open(os.path.join(dist_dir, 'sw.js'), 'w', encoding='utf-8') as f:
             f.write(sw_content.strip())
-        
-        click.secho("PWA successfully configured with user config logo & custom install banner!", fg='cyan')
 
     for route, page_obj in app._routes.items():
         rel_path = route.strip('/')
@@ -944,7 +943,7 @@ self.addEventListener('fetch', event => {{
         <h1 style="font-size: 5rem; margin-bottom: 0.5rem; color: var(--text-main);">404</h1>
         <h2 style="font-size: 1.5rem; font-weight: 500; margin-bottom: 2rem;">Page Not Found</h2>
         <p style="margin-bottom: 2rem; color: var(--text-muted);">Halaman yang kamu tuju tidak ditemukan atau URL-nya salah.</p>
-        <a href="/" style="padding: 0.75rem 1.5rem; background: var(--accent); color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Kembali ke Beranda</a>
+        <a href=""" + f'"{base_url}/"' + """ style="padding: 0.75rem 1.5rem; background: var(--accent); color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Kembali ke Beranda</a>
     </div>
     """
     

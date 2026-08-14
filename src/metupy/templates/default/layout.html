@@ -6,7 +6,7 @@
     <title>{{ title }} | {{ config.name }}</title>
     
     {% if config.logo %}
-    <link rel="icon" href="{{ config.logo }}">
+    <link rel="icon" href="{{ config.base_url|default('') }}{% if not config.logo.startswith('/') and not config.logo.startswith('http') %}/{% endif %}{{ config.logo }}">
     {% endif %}
     
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
@@ -35,13 +35,18 @@
       :data-theme="isDark ? 'dark' : 'light'"
       x-effect="document.body.style.overflow = (searchOpen || sidebarOpen || tocOpen) ? 'hidden' : ''">
     
-    <!-- Navbar -->
     <nav class="navbar">
         <div style="display: flex; align-items: center; gap: 1rem;">
             <button class="hamburger" @click="sidebarOpen = true">☰</button>
-            <a href="/" class="navbar-brand">
+            <a href="{{ config.base_url|default('') }}/" class="navbar-brand">
                 {% if config.logo %}
-                    <img src="{{ config.logo }}" alt="Logo" style="height: 32px; width: auto; border-radius: 6px;">
+                    {% set logo_src = config.logo %}
+                    {% if not logo_src.startswith('http://') and not logo_src.startswith('https://') %}
+                        {% set logo_url = (config.base_url|default('') ~ ('/' if not logo_src.startswith('/') else '') ~ logo_src)|replace('//', '/') %}
+                    {% else %}
+                        {% set logo_url = logo_src %}
+                    {% endif %}
+                    <img src="{{ logo_url }}" alt="Logo" style="height: 32px; width: auto; border-radius: 6px;">
                 {% else %}
                     <div class="navbar-logo-box">{{ config.name|title }}</div>
                 {% endif %}
@@ -50,7 +55,6 @@
         </div>
         
         <div class="navbar-actions">
-            <!-- Theme Toggle Button -->
             {% if config.use_darkmode %}
             <button @click="isDark = !isDark" class="nav-theme-btn" title="Toggle Theme">
                 <svg x-show="isDark" x-cloak style="display: none;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
@@ -58,7 +62,6 @@
             </button>
             {% endif %}
 
-            <!-- Search Trigger Button -->
             {% if config.use_search %}
             <button class="search-trigger" @click="searchOpen = true; $nextTick(() => { document.querySelector('.search-input').focus(); })">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -69,15 +72,13 @@
         </div>
     </nav>
 
-    <!-- 3-Column Layout -->
     <div class="layout">
         <div class="mobile-overlay" x-show="sidebarOpen" x-cloak style="display: none;" x-transition.opacity @click="sidebarOpen = false"></div>
         
-        <!-- Left Sidebar -->
         <aside class="sidebar" :class="{'show': sidebarOpen}">
             <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-color);">
                 {% if config.logo %}
-                    <img src="{{ config.logo }}" alt="Logo" style="height: 32px; width: auto; border-radius: 6px;">
+                    <img src="{{ logo_url }}" alt="Logo" style="height: 32px; width: auto; border-radius: 6px;">
                 {% else %}
                     <div class="navbar-logo-box">{{ config.name[:1].upper() }}</div>
                 {% endif %}
@@ -93,17 +94,14 @@
             </div>
         </aside>
 
-        <!-- Main Content -->
         <main class="main-content" id="main-content">{{ content | safe }}</main>
 
-        <!-- Right Sidebar (Table of Contents) -->
         <aside class="toc-sidebar" id="toc-desktop-container">
             <div class="toc-title">On This Page</div>
             <nav id="toc-desktop" class="toc-links"></nav>
         </aside>
     </div>
 
-    <!-- Mobile ToC FAB -->
     <button @click="tocOpen = true" class="fab-toc" id="fab-toc-btn" title="Table of Contents">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="21" y1="10" x2="7" y2="10"></line>
@@ -113,7 +111,6 @@
         </svg>
     </button>
 
-    <!-- Mobile ToC Drawer -->
     <div class="mobile-overlay" x-show="tocOpen" x-cloak style="display: none;" x-transition.opacity @click="tocOpen = false"></div>
     <div class="toc-mobile-drawer" x-show="tocOpen" x-cloak style="display: none;" x-transition>
         <div class="toc-mobile-header">
@@ -123,7 +120,6 @@
         <nav id="toc-mobile" class="toc-links" @click="if ($event.target.tagName === 'A') tocOpen = false"></nav>
     </div>
 
-    <!-- Search Modal -->
     {% if config.use_search %}
     <script>window.metupySearchIndex = {{ search_index_json | safe }};</script>
     <div class="modal-backdrop" x-show="searchOpen" x-cloak style="display:none;" x-transition.opacity @keydown.escape.window="searchOpen = false">
@@ -155,12 +151,10 @@
     </div>
     {% endif %}
 
-    <!-- Custom Scripts -->
     <script>
         {{ default_js | safe }}
     </script>
 
-    <!-- Third-Party Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 

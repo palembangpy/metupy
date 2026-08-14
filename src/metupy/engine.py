@@ -30,7 +30,8 @@ class MetupyServer:
             "use_darkmode": True,
             "icon_cdn": "",
             "logo": "",
-            "favicon": ""
+            "favicon": "",
+            "base_url": ""
         }
         self._load_config()
         
@@ -58,6 +59,7 @@ class MetupyServer:
                 self.config.update({k: v for k, v in meta.items() if k != 'icons'})
                 self.config["theme"] = meta.get("theme", "default")
                 self.config["icon_cdn"] = meta.get("icons", {}).get("cdn_url", "")
+                self.config["base_url"] = meta.get("base_url", "").rstrip('/')
 
     def _scan_pages(self):
         if not os.path.exists(self.pages_dir):
@@ -93,6 +95,7 @@ class MetupyServer:
 
     def _setup_routes(self):
         theme_name = self.config.get("theme", "default")
+        base_url = self.config.get("base_url", "")
         
         user_theme_dir = os.path.join(self.project_dir, "templates", theme_name)
         lib_theme_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", theme_name)
@@ -156,7 +159,9 @@ class MetupyServer:
                 if folder == "root":
                     for p in pages:
                         active_class = 'active' if route_path == p["route"] else ""
-                        sidebar_html += f'<a class="menu-link {active_class}" href="{p["route"]}" @click="sidebarOpen = false">{p["title"]}</a>\n'
+                        clean_r = p["route"].strip('/')
+                        href = f"{base_url}/{clean_r}" if clean_r else f"{base_url}/"
+                        sidebar_html += f'<a class="menu-link {active_class}" href="{href}" @click="sidebarOpen = false">{p["title"]}</a>\n'
                 else:
                     folder_title = folder.replace('-', ' ').replace('_', ' ').title()
                     folder_id = folder.replace("'", "\\'")
@@ -173,7 +178,9 @@ class MetupyServer:
                     '''
                     for p in pages:
                         active_class = 'active' if route_path == p["route"] else ""
-                        sidebar_html += f'<a class="menu-link {active_class}" href="{p["route"]}" @click="sidebarOpen = false">{p["title"]}</a>\n'
+                        clean_r = p["route"].strip('/')
+                        href = f"{base_url}/{clean_r}" if clean_r else f"{base_url}/"
+                        sidebar_html += f'<a class="menu-link {active_class}" href="{href}" @click="sidebarOpen = false">{p["title"]}</a>\n'
                     sidebar_html += '</div></div>\n'
             sidebar_html += '</div>'
 
@@ -189,8 +196,11 @@ class MetupyServer:
                 clean_text = re.sub(r'[#\*\_\>\|\-\=\[\]\(\)]', ' ', clean_text)
                 clean_text = " ".join(clean_text.split())
                 
+                clean_r = r.strip('/')
+                url_file = f"{base_url}/{clean_r}" if clean_r else f"{base_url}/"
+
                 search_data.append({
-                    "url": r,
+                    "url": url_file,
                     "title": getattr(p_obj, 'page_title', 'Untitled'),
                     "content": clean_text
                 })
