@@ -22,6 +22,7 @@ dependencies = [
     "flask>=3.0.0",
     "markdown>=3.5.0",
     "requests>=2.31.0",
+    "toml>=0.10.2",
 ]
 
 classifiers = [
