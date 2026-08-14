@@ -40,12 +40,8 @@
             <button class="hamburger" @click="sidebarOpen = true">☰</button>
             <a href="{{ config.base_url|default('') }}/" class="navbar-brand">
                 {% if config.logo %}
-                    {% set logo_src = config.logo %}
-                    {% if not logo_src.startswith('http://') and not logo_src.startswith('https://') %}
-                        {% set logo_url = (config.base_url|default('') ~ ('/' if not logo_src.startswith('/') else '') ~ logo_src)|replace('//', '/') %}
-                    {% else %}
-                        {% set logo_url = logo_src %}
-                    {% endif %}
+                    {% set clean_logo = config.logo[1:] if config.logo.startswith('/') else config.logo %}
+                    {% set logo_url = (config.base_url|default('') ~ '/' ~ clean_logo) if config.base_url else ('/' ~ clean_logo) %}
                     <img src="{{ logo_url }}" alt="Logo" style="height: 32px; width: auto; border-radius: 6px;">
                 {% else %}
                     <div class="navbar-logo-box">{{ config.name|title }}</div>
@@ -78,6 +74,8 @@
         <aside class="sidebar" :class="{'show': sidebarOpen}">
             <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-color);">
                 {% if config.logo %}
+                    {% set clean_logo = config.logo[1:] if config.logo.startswith('/') else config.logo %}
+                    {% set logo_url = (config.base_url|default('') ~ '/' ~ clean_logo) if config.base_url else ('/' ~ clean_logo) %}
                     <img src="{{ logo_url }}" alt="Logo" style="height: 32px; width: auto; border-radius: 6px;">
                 {% else %}
                     <div class="navbar-logo-box">{{ config.name[:1].upper() }}</div>

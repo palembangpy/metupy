@@ -4,9 +4,10 @@
 
 <p align="center">
   <a href="https://pypi.org/project/metupy"><img src="https://img.shields.io/pypi/v/metupy?color=blue&style=for-the-badge" alt="PyPI Version"></a>
+  <a href="https://pypi.org/project/metupy"><img src="https://img.shields.io/pypi/dm/metupy?style=for-the-badge&color=orange" alt="PyPI Downloads"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python Version"></a>
-  <a href="https://github.com"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License"></a>
-  <a href="https://github.com"><img src="https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge&logo=github-actions" alt="Build Status"></a>
+  <a href="https://github.com/palembangpy/metupy/actions"><img src="https://img.shields.io/github/actions/workflow/status/palembangpy/metupy/publish.yml?style=for-the-badge&logo=github-actions&label=tests" alt="Tests Status"></a>
+  <a href="https://github.com/palembangpy/metupy/blob/main/LICENSE.md"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License"></a>
 </p>
 
 <h1 align="center">Metupy Framework</h1>
@@ -14,6 +15,7 @@
 <p align="center">
   A lightweight, modern Python documentation framework & Static Site Generator (SSG) powered by PalembangPy Community.
 </p>
+
 
 ---
 
@@ -112,15 +114,17 @@ page.raw(f"""
 
 ```text
 my_docs/
-├── pyproject.toml      # Framework & theme configuration
-├── assets/             # Static files (images, logo, etc.)
-├── components/         # Local UI components & dynamic component loader
+├── pyproject.toml      # Project configuration, metadata, & base_url settings
+├── assets/             # Static assets (images, logos, custom styles)
+├── components/         # Local UI components & dynamic loader
 │   └── __init__.py
-├── pages/              # Documentation site pages
+├── pages/              # Documentation source pages (.py)
 │   └── index.py
-└── dist/               # Generated build output (after metupy build)
-    ├── sites/          # Compiled HTML documentation
-    └── contents/       # Raw Markdown files
+└── dist/               # Generated static build output (after running 'metupy build')
+    ├── index.html      # Compiled HTML pages & assets
+    ├── manifest.json   # PWA Manifest (optional)
+    └── sw.js           # Service Worker (optional)
+
 ```
 ---
 

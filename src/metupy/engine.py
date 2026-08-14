@@ -147,7 +147,6 @@ class MetupyServer:
 
             page_obj = self._routes[route_path]
             
-            # Navigation links
             active_folder_init = ""
             for folder, pages in self._tree.items():
                 if folder != "root" and any(route_path == p["route"] for p in pages):
@@ -160,7 +159,7 @@ class MetupyServer:
                     for p in pages:
                         active_class = 'active' if route_path == p["route"] else ""
                         clean_r = p["route"].strip('/')
-                        href = f"{base_url}/{clean_r}" if clean_r else f"{base_url}/"
+                        href = f"{base_url}/{clean_r}/" if clean_r else f"{base_url}/"
                         sidebar_html += f'<a class="menu-link {active_class}" href="{href}" @click="sidebarOpen = false">{p["title"]}</a>\n'
                 else:
                     folder_title = folder.replace('-', ' ').replace('_', ' ').title()
@@ -179,12 +178,11 @@ class MetupyServer:
                     for p in pages:
                         active_class = 'active' if route_path == p["route"] else ""
                         clean_r = p["route"].strip('/')
-                        href = f"{base_url}/{clean_r}" if clean_r else f"{base_url}/"
+                        href = f"{base_url}/{clean_r}/" if clean_r else f"{base_url}/"
                         sidebar_html += f'<a class="menu-link {active_class}" href="{href}" @click="sidebarOpen = false">{p["title"]}</a>\n'
                     sidebar_html += '</div></div>\n'
             sidebar_html += '</div>'
 
-            # Search index
             search_data = []
             for r, p_obj in self._routes.items():
                 raw_content = p_obj.render() if hasattr(p_obj, 'render') else str(p_obj)
@@ -197,7 +195,7 @@ class MetupyServer:
                 clean_text = " ".join(clean_text.split())
                 
                 clean_r = r.strip('/')
-                url_file = f"{base_url}/{clean_r}" if clean_r else f"{base_url}/"
+                url_file = f"{base_url}/{clean_r}/" if clean_r else f"{base_url}/"
 
                 search_data.append({
                     "url": url_file,
@@ -207,7 +205,6 @@ class MetupyServer:
 
             md_content = page_obj.render()
             
-            # Markdown processing
             html_content = markdown.markdown(
                 md_content, 
                 extensions=['fenced_code', 'tables', 'toc', 'attr_list']
