@@ -653,15 +653,21 @@ def dev(port):
 
 
 @cli.command()
-def build():
+@click.option('--domain', default="", help="Custom domain or subdomain for deployment.")
+@click.option('--pwa/--no-pwa', default=False, help="Enable or disable PWA support.")
+def build(domain, pwa):
     """Build static site documentation into pure HTML pages using active theme workspace."""
-    custom_domain_choice = click.prompt("Do you want to customize the domain? (yes/no)", type=str, default="no").strip().lower()
-    custom_domain_value = ""
-    if custom_domain_choice == "yes":
-        custom_domain_value = click.prompt("Enter domain or subdomain (without http/https)", type=str).strip()
+    custom_domain_value = domain
+    enable_pwa = pwa
 
-    pwa_choice = click.prompt("Do you want to enable PWA (Progressive Web App) support? (yes/no)", type=str, default="no").strip().lower()
-    enable_pwa = (pwa_choice == "yes")
+    if not domain and sys.stdin and sys.stdin.isatty():
+        custom_domain_choice = click.prompt("Do you want to customize the domain? (yes/no)", type=str, default="no").strip().lower()
+        if custom_domain_choice == "yes":
+            custom_domain_value = click.prompt("Enter domain or subdomain (without http/https)", type=str).strip()
+
+    if not pwa and sys.stdin and sys.stdin.isatty():
+        pwa_choice = click.prompt("Do you want to enable PWA (Progressive Web App) support? (yes/no)", type=str, default="no").strip().lower()
+        enable_pwa = (pwa_choice == "yes")
 
     if os.getcwd() not in sys.path:
         sys.path.insert(0, os.getcwd())
@@ -839,7 +845,6 @@ def build():
       });
     </script>
 """
-        # Generate manifest.json
         manifest_data = {
             "name": app_name,
             "short_name": app_name,
@@ -863,14 +868,21 @@ def build():
         with open(os.path.join(dist_dir, 'manifest.json'), 'w', encoding='utf-8') as f:
             json.dump(manifest_data, f, indent=4)
         
-        # Generate sw.js (Service Worker caching)
         sw_content = f"""
 const CACHE_NAME = 'metupy-pwa-cache-v1';
-const urlsToCache = ['/', '/index.html', '/404.html', '/manifest.json', '{user_logo}'];
+const urlsToCache = ['/', '/index.html', '/manifest.json', '{user_logo}'];
 
 self.addEventListener('install', event => {{
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
+        caches.open(CACHE_NAME).then(async cache => {{
+            for (const url of urlsToCache) {{
+                try {{
+                    await cache.add(url);
+                }} catch (err) {{
+                    console.warn('Failed to cache:', url, err);
+                }}
+            }}
+        }})
     );
 }});
 
@@ -955,14 +967,13 @@ self.addEventListener('fetch', event => {{
     with open(os.path.join(dist_dir, '404.html'), 'w', encoding='utf-8') as f:
         f.write(html_404_output)
 
-    if custom_domain_choice == "yes" and custom_domain_value:
+    if custom_domain_value:
         cname_path = os.path.join(dist_dir, 'CNAME')
         with open(cname_path, 'w', encoding='utf-8') as f:
             f.write(custom_domain_value)
         click.secho(f"Custom domain CNAME file created: {custom_domain_value}", fg='cyan')
 
     click.secho("Static HTML build successful! Output saved in ./dist/", fg='green', bold=True)
-
 
 if __name__ == "__main__":
     cli()
